@@ -150,7 +150,10 @@ RetCode LoadBitCodeTable(Uint16 * pBitCode, int *size)
 #else
 		strcpy(fw_name, "/lib/firmware/vpu");	/* default path */
 #endif
-	else
+	else if (strlen(fw_path) > 200) {
+		err_msg("VPU_FW_PATH can have at most 200 characters\n");
+		return RETCODE_FAILURE;
+	} else
 		strcpy(fw_name, fw_path);
 
 	strcat(fw_name, "/");
@@ -177,8 +180,6 @@ RetCode LoadBitCodeTable(Uint16 * pBitCode, int *size)
 
 	if (cpu_is_mx6x()) {
 		ret = fread(pBitCode, sizeof(Uint16), MAX_FW_BINARY_LEN, fp);
-		fclose(fp);
-
 		*size = ret;
 	}
 	else {
@@ -195,7 +196,6 @@ RetCode LoadBitCodeTable(Uint16 * pBitCode, int *size)
 			err_msg("VPU firmware binary file is wrong or corrupted.\n");
 			goto err;
 		}
-		fclose(fp);
 
 		memset(temp_str, 0, 64);
 		sprintf(temp_str, "%2x", mxc_cpu());
@@ -204,6 +204,7 @@ RetCode LoadBitCodeTable(Uint16 * pBitCode, int *size)
 		else if (strcmp(temp_str, "61") == 0)
 			strcpy(temp_str, "6D");
 
+		info.platform[sizeof(info.platform) - 1] = '\0';
 		if (strstr((char *)info.platform, temp_str) == NULL) {
 			err_msg("VPU firmware platform version isn't matched\n");
 			goto err;
@@ -211,6 +212,7 @@ RetCode LoadBitCodeTable(Uint16 * pBitCode, int *size)
 
 		*size = (int)info.size;
 	}
+	fclose(fp);
 	return RETCODE_SUCCESS;
 
       err:
@@ -1272,7 +1274,11 @@ static void *get_shared_buf(int size, int create) {
 			return NULL;
 		}
 
-		chmod(FN_SHARE, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
+		ret = chmod(FN_SHARE, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
+		if(-1 == ret) {
+			perror("chmod failed");
+			return NULL;
+		}
 
 		ret = ftruncate(fd_share, size);
 		if(-1 == ret) {
@@ -3336,8 +3342,10 @@ proc_wrap:
 			temp_size = pDecInfo->streamWrPtr - pDecInfo->streamBufStartAddr;
 			if (temp_size) {
 				temp_buf = malloc(temp_size);
-				if (!temp_buf)
+				if (!temp_buf) {
 					err_msg("Allocate memory failure\n");
+					return 0;
+				}
 				else
 					memcpy(temp_buf, (void *)jpg->pVirtBitStream, temp_size);
 			}
@@ -3572,9 +3580,6 @@ void PutUE(VlcPutBitstream *pBitstream, int data)
 		zeroNum++;
 	}
 	zeroNum--;
-
-	if (zeroNum > 14)
-		zeroNum = zeroNum;
 
 	PutBits(pBitstream, 0, zeroNum);
 	codeNum = data + 1 - (1 << zeroNum);
